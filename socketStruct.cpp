@@ -22,13 +22,19 @@
 
 #define BROADCAST_ADDR 0xFFFFFFFF
 
-unsigned char buff[1500];
-int sock;
+struct option_field {
+	unsigned char 	dhcp_message_type; // 53
+	uint32_t 	  	subnet_mask; //01
+	uint32_t 		renewal_time_value; //58
+	uint32_t 		rebinding_time_value;//59
+	uint32_t 		ip_address_lease_time;//51
+	uint32_t 		server_identifier;//54
+	uint32_t 		router;//03
+	uint32_t 		netBIOS_name_service; //44 size n octects adress
+	unsigned char 	netBIOS_node_type; // 46
 
-typedef struct ether_header ethernet;
-typedef struct iphdr ip;
-typedef struct udphdr udp;
-typedef struct dhcp_packet dhcp;
+	unsigned char end = 0xFF;
+};
 
 struct package_header{
 	ethernet eth;
@@ -36,12 +42,31 @@ struct package_header{
 	udp udp;
 	dhcp dhcp;
 };
-
+typedef struct ether_header ethernet;
+typedef struct iphdr ip;
+typedef struct udphdr udp;
+typedef struct dhcp_packet dhcp;
+typedef struct options_field options_field;
 typedef struct package package;
+
+
+unsigned char buff[1500];
+int sock;
 
 package * curr_pack = (package *)&buff[0];
 
-
+void monta_options(option_field &option_pointer)
+{
+	(&option_pointer).dhcp_message_type = 0x530100; // 53
+	(&option_pointer).subnet_mask = 0x010400000000; //01
+	(&option_pointer).renewal_time_value= 0x010400000000; //58
+	(&option_pointer).rebinding_time_value= 0x010400000000;//59
+	(&option_pointer).ip_address_lease_time= 0x010400000000;//51
+	(&option_pointer).server_identifier= 0x010400000000;//54
+	(&option_pointer).router= 0x010400000000;//03
+	(&option_pointer).netBIOS_name_service= 0x530400000000; //44 size n octects adress
+	(&option_pointer).netBIOS_node_type= 0x530100; // 46
+}
 /// recebe parametros em formato ordenado da rede ( funcções noths(), ntohl(),htons(),htonl())
 void monta_eth(uint32_t mac_dst, uint32_t mac_src, uint16_t type)
 { 
@@ -78,11 +103,12 @@ void monta_dhcp(){ }
 
 void monta_DHCP_OFFER()
 {
-	curr_pack->dhcp.op = 2;
-	//curr_pack->dhcp.flags = 
+	curr_pack->dhcp.op = 2; //Op Code
+	curr_pack->dhcp.yiaddr = curr_pack->ip.saddr; //Your IP Address
 
-	curr_pack->dhcp.yiaddr = curr_pack->ip.saddr;
 	curr_pack->dhcp.options = unsigned char[DHCP_OPTION_LEN];
+	options_field * options = ( options_field * ) &curr_pack->dhcp.options[0];
+	monta_options(*options);
 }
 
 
@@ -147,28 +173,33 @@ void enviaPacote()
 
 int main(int argc,char *argv[])
 {
-    /* Criacao do socket. Uso do protocolo Ethernet em todos os pacotes. D� um "man" para ver os par�metros.*/
+    /* Criacao do socket. Uso do protocolo Ethernet em todos os pacotes. De um "man" para ver os parametros.*/
     /* htons: converte um short (2-byte) integer para standard network byte order. */
 	if((sock = socket(PF_PACKET, SOCK_RAW, htons(ETH_P_ALL))) < 0)  {
 		printf("Erro na criacao do socket.\n");
         exit(1);
  	}
 
+	bool recebeuDhcpDiscover = false;
+
 	while(1)
 	{
 		//Le mensagens
 		recv(sockd,(char *) &buff1, sizeof(buff1), 0x0);
 		curr_pack = (package *) &buff[0];
+
+		//Verifica o tipo de protocolo no ethernet
 		switch (ntohs(curr_pack->eth->ether_type))
 		{
 			case ETH_P_IP: //IPv4
-				if (curr_pack->ip.ip_p == 17 
-				&& curr_pack->udp.uh_dport == 67) //UDP
+				if (curr_pack->ip.ip_p == 17 && curr_pack->udp.uh_dport == 67) //UDP
 				{
 					int * options = (int *)&(curr_pack->dhcp->options[0]);
-					if(*options == DHCPDISCOVER)
+
+					if(*options == DHCPDISCOVER) //DHCP Discover
 					{
 						monta_DHCP_OFFER();
+						recebeuDhcpDiscover = true;
 					}
 				}
 				break;
@@ -185,7 +216,7 @@ int main(int argc,char *argv[])
 		}
 		
 		//Se DHCP Discovery identificada...
-		if (false)
+		if (recebeuDhcpDiscover)
 		{
 			enviaPacote();
 		}
