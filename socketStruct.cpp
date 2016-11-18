@@ -3,6 +3,7 @@
 /*-------------------------------------------------------------*/
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 #include <signal.h>
@@ -20,34 +21,47 @@
 #include <stdint.h>
 #include "dhcp.h"
 
-#define BROADCAST_ADDR 0xFFFFFFFF
+#define SOCKETSTRUCT_H
+ 
+#define BROADCAST_ADDR 			0xFFFFFFFF
+#define DHCP_MESSAGE_TYPE 		0X350100
+#define SUBNET_MASK 			0x010400000000
+#define RENEWAL_TIME_VALUE 		0x3A0400000000
+#define REBINDING_TIME_VALUE	0x3B0400000000
+#define IP_ADDRES_LEASE_TIME	0x330400000000
+#define SERVER_IDENTIFIER 		0x360400000000
+#define ROUTER			 		0x030400000000
+#define NETBIOS_NAME_SERVICE	0x2C0400000000
+#define NETBIOS_NODE_TYPE		0x2E0100
+#define END						0xFF
 
-struct option_field {
-	unsigned char 	dhcp_message_type; // 53
-	uint32_t 	  	subnet_mask; //01
-	uint32_t 		renewal_time_value; //58
-	uint32_t 		rebinding_time_value;//59
-	uint32_t 		ip_address_lease_time;//51
-	uint32_t 		server_identifier;//54
-	uint32_t 		router;//03
-	uint32_t 		netBIOS_name_service; //44 size n octects adress
-	unsigned char 	netBIOS_node_type; // 46
+typedef struct ether_header _ethernet;
+typedef struct iphdr _ip;
+typedef struct udphdr _udp;
+typedef struct dhcp_packet _dhcp;
+typedef struct option_field {
+	unsigned char 	dhcp_message_type; // 53 0X35
+	uint32_t 	  	subnet_mask; //01 0X01
+	uint32_t 		renewal_time_value; //58 0X3A
+	uint32_t 		rebinding_time_value;//59 0X3B
+	uint32_t 		ip_address_lease_time;//51 0X
+	uint32_t 		server_identifier;//54 0X36
+	uint32_t 		router;//03 0X03
+	uint32_t 		netBIOS_name_service; //44 0X2C size n octects adress
+	unsigned char 	netBIOS_node_type; // 46 0X2E
 
-	unsigned char end = 0xFF;
-};
+	unsigned char end = END;
+} options_field;
 
-struct package_header{
-	ethernet eth;
-	ip ip;
-	udp udp;
-	dhcp dhcp;
-};
-typedef struct ether_header ethernet;
-typedef struct iphdr ip;
-typedef struct udphdr udp;
-typedef struct dhcp_packet dhcp;
-typedef struct options_field options_field;
-typedef struct package package;
+typedef struct package_header{
+	_ethernet eth;
+	_ip ip;
+	_udp udp;
+	_dhcp dhcp;
+} package ;
+
+unsigned char net_ip[4] = [10,32,143,0];
+unsigned char next_free_ip = 201;
 
 
 unsigned char buff[1500];
@@ -55,17 +69,22 @@ int sock;
 
 package * curr_pack = (package *)&buff[0];
 
-void monta_options(option_field &option_pointer)
+in_addr convertInt32(u_int32_t toConvert)
 {
-	(&option_pointer).dhcp_message_type = 0x530100; // 53
-	(&option_pointer).subnet_mask = 0x010400000000; //01
-	(&option_pointer).renewal_time_value= 0x010400000000; //58
-	(&option_pointer).rebinding_time_value= 0x010400000000;//59
-	(&option_pointer).ip_address_lease_time= 0x010400000000;//51
-	(&option_pointer).server_identifier= 0x010400000000;//54
-	(&option_pointer).router= 0x010400000000;//03
-	(&option_pointer).netBIOS_name_service= 0x530400000000; //44 size n octects adress
-	(&option_pointer).netBIOS_node_type= 0x530100; // 46
+	return *( struct in_addr * ) &toConvert;
+}
+
+void monta_options(option_field *option_pointer)
+{
+	option_pointer->dhcp_message_type = 		DHCP_MESSAGE_TYPE; // 53
+	option_pointer->subnet_mask = 				SUBNET_MASK; //01
+	option_pointer->renewal_time_value= 		RENEWAL_TIME_VALUE; //58
+	option_pointer->rebinding_time_value= 		REBINDING_TIME_VALUE;//59
+	option_pointer->ip_address_lease_time= 		IP_ADDRES_LEASE_TIME;//51
+	option_pointer->server_identifier= 			SERVER_IDENTIFIER;//54
+	option_pointer->router= 					ROUTER;//03
+	option_pointer->netBIOS_name_service= 		NETBIOS_NAME_SERVICE; //44 size n octects adress
+	option_pointer->netBIOS_node_type= 			NETBIOS_NODE_TYPE; // 46
 }
 /// recebe parametros em formato ordenado da rede ( funcções noths(), ntohl(),htons(),htonl())
 void monta_eth(uint32_t mac_dst, uint32_t mac_src, uint16_t type)
@@ -88,13 +107,13 @@ void monta_eth(uint32_t mac_dst, uint32_t mac_src, uint16_t type)
 	curr_pack->eth.ether_shost[4] = mac[4];
 	curr_pack->eth.ether_shost[5] = mac[5];
 	
- 	eth->ether_type = type;
+ 	curr_pack->eth.ether_type = type;
 }
 
 void monta_ip(uint32_t ip_server)
 { 
 	curr_pack->ip.saddr = ip_server;
-	curr_pack->ip.daddr = BROADCAST_ADDR
+	curr_pack->ip.daddr = BROADCAST_ADDR;
 }
 
 void monta_udp(){ }
@@ -104,11 +123,11 @@ void monta_dhcp(){ }
 void monta_DHCP_OFFER()
 {
 	curr_pack->dhcp.op = 2; //Op Code
-	curr_pack->dhcp.yiaddr = curr_pack->ip.saddr; //Your IP Address
+	curr_pack->dhcp.yiaddr =  convertInt32(curr_pack->ip.saddr); //Your IP Address
+	
+	memcpy(&curr_pack->dhcp.options[0],0,DHCP_MAX_OPTION_LEN);
 
-	curr_pack->dhcp.options = unsigned char[DHCP_OPTION_LEN];
-	options_field * options = ( options_field * ) &curr_pack->dhcp.options[0];
-	monta_options(*options);
+	monta_options(( options_field * ) &curr_pack->dhcp.options[0]);
 }
 
 
@@ -185,16 +204,16 @@ int main(int argc,char *argv[])
 	while(1)
 	{
 		//Le mensagens
-		recv(sockd,(char *) &buff1, sizeof(buff1), 0x0);
+		recv(sock,(char *) &buff, sizeof(buff), 0x0);
 		curr_pack = (package *) &buff[0];
 
 		//Verifica o tipo de protocolo no ethernet
-		switch (ntohs(curr_pack->eth->ether_type))
+		switch (ntohs(curr_pack->eth.ether_type))
 		{
 			case ETH_P_IP: //IPv4
-				if (curr_pack->ip.ip_p == 17 && curr_pack->udp.uh_dport == 67) //UDP
+				if (curr_pack->ip.protocol == 17 && curr_pack->udp.uh_dport == 67) //UDP
 				{
-					int * options = (int *)&(curr_pack->dhcp->options[0]);
+					int * options = (int *)&(curr_pack->dhcp.options[0]);
 
 					if(*options == DHCPDISCOVER) //DHCP Discover
 					{
