@@ -15,24 +15,33 @@
 #include <netinet/ip.h>
 #include <netinet/udp.h>
 #include <net/if.h>
+#include <ifaddrs.h>
 #include <arpa/inet.h>
 #include <net/ethernet.h>
 #include <linux/if_packet.h>
 #include <stdint.h>
 #include "dhcp.h"
+#include "in_cksum.cpp"
 
+#ifndef SOCKETSTRUCT_H
 #define SOCKETSTRUCT_H
- 
-#define BROADCAST_ADDR 			0xFFFFFFFF
-#define DHCP_MESSAGE_TYPE 		0X350100
-#define SUBNET_MASK 			0x010400000000
-#define RENEWAL_TIME_VALUE 		0x3A0400000000
-#define REBINDING_TIME_VALUE	0x3B0400000000
-#define IP_ADDRES_LEASE_TIME	0x330400000000
-#define SERVER_IDENTIFIER 		0x360400000000
-#define ROUTER			 		0x030400000000
-#define NETBIOS_NAME_SERVICE	0x2C0400000000
-#define NETBIOS_NODE_TYPE		0x2E0100
+
+
+#define BROADCAST_ADDR 			0xFFFFFFFF // 255.255.255.255
+#define NET_MASK				0x11111100 // 255.255.255.0
+#define LEASE_TIME_DEFAULT		0X00000078 // 120 segundos
+#define DHCP_OFFER				0x02
+
+//DHCP OPTIONS DEFAULT
+#define DHCP_MESSAGE_TYPE 		0X3501
+#define IP_ADDRES_LEASE_TIME	0x3304
+#define SUBNET_MASK 			0x0104
+#define DHCP_OPT_BROADCAST		0x1C04
+#define ROUTER			 		0x0304
+#define DOMAIN_NAME 			0x0F12
+#define SERVER_IDENTIFIER 		0x3608
+#define DOMAIN_NAME_SERVER_ID	0x0608
+#define NETBIOS_NAME_SERVICE	0x2C08
 #define END						0xFF
 
 typedef struct ether_header _ethernet;
@@ -40,17 +49,35 @@ typedef struct iphdr _ip;
 typedef struct udphdr _udp;
 typedef struct dhcp_packet _dhcp;
 typedef struct option_field {
+	uint16_t		dhcp_message_type_id;
 	unsigned char 	dhcp_message_type; // 53 0X35
-	uint32_t 	  	subnet_mask; //01 0X01
-	uint32_t 		renewal_time_value; //58 0X3A
-	uint32_t 		rebinding_time_value;//59 0X3B
+	
+	uint16_t		ip_address_lease_time_id;
 	uint32_t 		ip_address_lease_time;//51 0X
-	uint32_t 		server_identifier;//54 0X36
+	
+	uint16_t		subnet_mask_id;
+	uint32_t 	  	subnet_mask; //01 0X01
+	
+	uint16_t		broadcast_addr_id;
+	uint32_t		broadcast_addr;//28 
+	
+	uint16_t		router_id;
 	uint32_t 		router;//03 0X03
-	uint32_t 		netBIOS_name_service; //44 0X2C size n octects adress
-	unsigned char 	netBIOS_node_type; // 46 0X2E
 
-	unsigned char end = END;
+	uint16_t		domain_name_id;
+	uint32_t 		domain_name[3]; //15 0X3A
+	
+	uint16_t		server_identifier_id;
+	uint32_t 		server_identifier;//54 0X36
+	
+	
+	uint16_t		domain_name_server_id;
+	uint32_t 		domain_name_server[2];//06 
+	
+	uint16_t		netBIOS_name_service_id;
+	uint32_t 		netBIOS_name_service[2]; //44 0X2C size n octects adress
+
+	unsigned char 	end;
 } options_field;
 
 typedef struct package_header{
@@ -60,8 +87,13 @@ typedef struct package_header{
 	_dhcp dhcp;
 } package ;
 
-unsigned char net_ip[4] = [10,32,143,0];
-unsigned char next_free_ip = 201;
+//unsigned char net_ip[4] = [10,32,143,0];
+uint32_t my_ip = 0; // 10.32.143.0
+uint32_t net_ip = 0x0A208F00; // 10.32.143.0]
+uint32_t sub_net = 0;
+uint32_t domain_name_server_1 = 0X0A28300A;
+uint32_t domain_name_server_2 = 0X0A28300B;
+unsigned char next_free_ip = 0xC9; // 201;
 
 
 unsigned char buff[1500];
@@ -74,17 +106,69 @@ in_addr convertInt32(u_int32_t toConvert)
 	return *( struct in_addr * ) &toConvert;
 }
 
+u_int32_t convertToInt32(struct in_addr toConvert)
+{
+	return *( u_int32_t * ) &toConvert;
+}
+
+void load_ips()
+{
+	struct ifaddrs *ifap, *ifa;
+    struct sockaddr_in *sa;
+
+    getifaddrs (&ifap);
+    for (ifa = ifap; ifa; ifa = ifa->ifa_next) 
+	{
+        if (ifa->ifa_addr->sa_family==AF_INET) 
+		{
+            sa = (struct sockaddr_in *) ifa->ifa_addr;
+			my_ip = convertToInt32(sa->sin_addr);
+            net_ip = my_ip & NET_MASK;
+			break;
+        }
+    }
+	if (ifap!=NULL)
+		freeifaddrs(ifap);
+	if (ifa!=NULL)
+		freeifaddrs(ifa);
+}
+
 void monta_options(option_field *option_pointer)
 {
-	option_pointer->dhcp_message_type = 		DHCP_MESSAGE_TYPE; // 53
-	option_pointer->subnet_mask = 				SUBNET_MASK; //01
-	option_pointer->renewal_time_value= 		RENEWAL_TIME_VALUE; //58
-	option_pointer->rebinding_time_value= 		REBINDING_TIME_VALUE;//59
-	option_pointer->ip_address_lease_time= 		IP_ADDRES_LEASE_TIME;//51
-	option_pointer->server_identifier= 			SERVER_IDENTIFIER;//54
-	option_pointer->router= 					ROUTER;//03
-	option_pointer->netBIOS_name_service= 		NETBIOS_NAME_SERVICE; //44 size n octects adress
-	option_pointer->netBIOS_node_type= 			NETBIOS_NODE_TYPE; // 46
+
+	option_pointer->dhcp_message_type_id = 		DHCP_MESSAGE_TYPE; // 53
+	option_pointer->dhcp_message_type = 		DHCP_OFFER; // 53
+
+	option_pointer->ip_address_lease_time_id =	IP_ADDRES_LEASE_TIME;//51 -- 120 SEGUNDOS
+	option_pointer->ip_address_lease_time= 		LEASE_TIME_DEFAULT;//51 -- 120 SEGUNDOS
+
+	option_pointer->subnet_mask_id =			SUBNET_MASK; //01
+	option_pointer->subnet_mask = 				NET_MASK + sub_net; //01
+
+	option_pointer->broadcast_addr_id =			DHCP_OPT_BROADCAST; //58
+	option_pointer->broadcast_addr= 			net_ip + (sub_net & 255); //58
+
+	option_pointer->router_id =					ROUTER;//03
+	option_pointer->router= 					my_ip;//03
+
+	option_pointer->server_identifier_id =		SERVER_IDENTIFIER;//54
+	option_pointer->server_identifier= 			my_ip;//54
+
+	option_pointer->domain_name_id = 			DOMAIN_NAME;
+	option_pointer->domain_name[0]= 			0X696E662E;
+	option_pointer->domain_name[1]= 			0X70756372;
+	option_pointer->domain_name[2]= 			0X732E6272;
+
+	option_pointer->domain_name_server_id =		DOMAIN_NAME_SERVER_ID;//59
+	option_pointer->domain_name_server[0]= 		domain_name_server_1;//59
+	option_pointer->domain_name_server[1]= 		domain_name_server_2;//59
+
+	option_pointer->netBIOS_name_service_id =	NETBIOS_NAME_SERVICE;
+	option_pointer->netBIOS_name_service[0]=	domain_name_server_1;
+	option_pointer->netBIOS_name_service[1]=	domain_name_server_2;
+
+	option_pointer->end=						END;
+
 }
 /// recebe parametros em formato ordenado da rede ( funcções noths(), ntohl(),htons(),htonl())
 void monta_eth(uint32_t mac_dst, uint32_t mac_src, uint16_t type)
@@ -110,20 +194,42 @@ void monta_eth(uint32_t mac_dst, uint32_t mac_src, uint16_t type)
  	curr_pack->eth.ether_type = type;
 }
 
-void monta_ip(uint32_t ip_server)
-{ 
-	curr_pack->ip.saddr = ip_server;
-	curr_pack->ip.daddr = BROADCAST_ADDR;
-}
 
 void monta_udp(){ }
 
 void monta_dhcp(){ }
 
+void monta_ip(uint32_t ip_source, uint32_t ip_dest)
+{ 
+	curr_pack->ip.saddr = ip_source;
+	curr_pack->ip.daddr = ip_dest;
+	curr_pack->ip.check = 0;
+	curr_pack->ip.check = in_cksum( (unsigned short * ) &curr_pack->ip , sizeof(_ip) );
+}
+
+void inverte_eth()
+{
+	u_int8_t mac[6];
+	memcpy(&mac[0],&curr_pack->eth.ether_dhost[0],6);
+	memcpy(&curr_pack->eth.ether_dhost[0],&curr_pack->eth.ether_shost[0],6);
+	memcpy(&curr_pack->eth.ether_shost[0],&mac[0],6);
+	//free(mac);
+}
+void inverte_udp()
+{
+	uint16_t port_aux = curr_pack->udp.uh_sport; 
+	curr_pack->udp.uh_sport = curr_pack->udp.uh_dport;
+	curr_pack->udp.uh_dport = port_aux;
+}
+
 void monta_DHCP_OFFER()
 {
+	inverte_eth();
+	monta_ip(my_ip, BROADCAST_ADDR);
+	inverte_udp();
+
 	curr_pack->dhcp.op = 2; //Op Code
-	curr_pack->dhcp.yiaddr =  convertInt32(curr_pack->ip.saddr); //Your IP Address
+	curr_pack->dhcp.yiaddr = convertInt32(net_ip + (next_free_ip++)); //Your IP Address
 	
 	memcpy(&curr_pack->dhcp.options[0],0,DHCP_MAX_OPTION_LEN);
 
@@ -241,3 +347,5 @@ int main(int argc,char *argv[])
 		}
 	}
 }
+
+#endif
