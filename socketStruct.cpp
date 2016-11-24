@@ -30,7 +30,6 @@
 #define BROADCAST_ADDR 			0xFFFFFFFF // 255.255.255.255
 #define NET_MASK				0x11111100 // 255.255.255.0
 #define LEASE_TIME_DEFAULT		0X00000078 // 120 segundos
-#define DHCP_OFFER				0x02
 
 //DHCP OPTIONS DEFAULT
 #define DHCP_MESSAGE_TYPE 		0X3501
@@ -88,7 +87,7 @@ typedef struct package_header{
 } package ;
 
 //unsigned char net_ip[4] = [10,32,143,0];
-uint32_t my_ip = 0; // 10.32.143.0
+uint32_t my_ip = 0; // to load in load_ips
 uint32_t net_ip = 0x0A208F00; // 10.32.143.0]
 uint32_t sub_net = 0;
 uint32_t domain_name_server_1 = 0X0A28300A;
@@ -133,11 +132,11 @@ void load_ips()
 		freeifaddrs(ifa);
 }
 
-void monta_options(option_field *option_pointer)
+void monta_options(option_field *option_pointer, unsigned char type)
 {
 
 	option_pointer->dhcp_message_type_id = 		DHCP_MESSAGE_TYPE; // 53
-	option_pointer->dhcp_message_type = 		DHCP_OFFER; // 53
+	option_pointer->dhcp_message_type = 		type; // 53
 
 	option_pointer->ip_address_lease_time_id =	IP_ADDRES_LEASE_TIME;//51 -- 120 SEGUNDOS
 	option_pointer->ip_address_lease_time= 		LEASE_TIME_DEFAULT;//51 -- 120 SEGUNDOS
@@ -222,7 +221,7 @@ void inverte_udp()
 	curr_pack->udp.uh_dport = port_aux;
 }
 
-void monta_DHCP_OFFER()
+void monta_DHCP(unsigned char type)
 {
 	inverte_eth();
 	monta_ip(my_ip, BROADCAST_ADDR);
@@ -233,7 +232,7 @@ void monta_DHCP_OFFER()
 	
 	memcpy(&curr_pack->dhcp.options[0],0,DHCP_MAX_OPTION_LEN);
 
-	monta_options(( options_field * ) &curr_pack->dhcp.options[0]);
+	monta_options(( options_field * ) &curr_pack->dhcp.options[0],type);
 }
 
 
@@ -305,7 +304,7 @@ int main(int argc,char *argv[])
         exit(1);
  	}
 
-	bool recebeuDhcpDiscover = false;
+	bool recebeuDhcp = false;
 
 	while(1)
 	{
@@ -323,21 +322,16 @@ int main(int argc,char *argv[])
 
 					if(*options == DHCPDISCOVER) //DHCP Discover
 					{
-						monta_DHCP_OFFER();
+						monta_DHCP(DHCPOFFER);
+						recebeuDhcpDiscover = true;
+					}
+					else if(*options == DHCPREQUEST)
+					{
+						monta_DHCP(DHCPACK);
 						recebeuDhcpDiscover = true;
 					}
 				}
 				break;
-
-			/*
-			case ETH_P_IPV6: //IPv6
-				switch (ipv6.ip6_nxt)
-				{
-					case 17: //UDP
-                        break;
-				}
-				break;
-			*/
 		}
 		
 		//Se DHCP Discovery identificada...
