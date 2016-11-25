@@ -40,7 +40,7 @@
 #define END						0xFF
 
 typedef struct ether_header _ethernet;
-typedef struct iphdr _ip;
+typedef struct ip _ip;
 typedef struct udphdr _udp;
 typedef struct dhcp_packet _dhcp;
 typedef struct option_field {
@@ -196,10 +196,10 @@ void monta_dhcp(){ }
 
 void monta_ip(uint32_t ip_source, uint32_t ip_dest)
 { 
-	curr_pack->ip.saddr = ip_source;
-	curr_pack->ip.daddr = ip_dest;
-	curr_pack->ip.check = 0;
-	curr_pack->ip.check = in_cksum( (unsigned short * ) &curr_pack->ip , sizeof(_ip) );
+	curr_pack->ip.ip_src = convertInt32(ip_source);
+	curr_pack->ip.ip_dst = convertInt32(ip_dest);
+	curr_pack->ip.ip_sum = 0;
+	curr_pack->ip.ip_sum = in_cksum( (unsigned short * ) &curr_pack->ip , sizeof(_ip) );
 }
 
 void inverte_eth()
@@ -293,8 +293,8 @@ void enviaPacote()
 
 int main(int argc,char *argv[])
 {
-	printf("oi\n");
 	load_ips();
+
     /* Criacao do socket. Uso do protocolo Ethernet em todos os pacotes. De um "man" para ver os parametros.*/
     /* htons: converte um short (2-byte) integer para standard network byte order. */
 	if((sock = socket(PF_PACKET, SOCK_RAW, htons(ETH_P_ALL))) < 0)  {
@@ -302,13 +302,10 @@ int main(int argc,char *argv[])
         exit(1);
  	}
 
-	printf("oi\n");
 	bool recebeuDhcpDiscover = false;
 
-	printf("oi\n");
 	while(1)
 	{
-	printf("oi\n");
 		//Le mensagens
 		recv(sock,(char *) &buff, sizeof(buff), 0x0);
 		curr_pack = (package *) &buff[0];
@@ -316,9 +313,30 @@ int main(int argc,char *argv[])
 		//Verifica o tipo de protocolo no ethernet
 		switch (ntohs(curr_pack->eth.ether_type))
 		{
-			case ETH_P_IP: //IPv4
-				if (curr_pack->ip.protocol == 17 && curr_pack->udp.uh_dport == 67) //UDP
+			case ETHERTYPE_IP: //IPv4
+				printf("%x:%x:%x:%x:%x:%x \n",
+						curr_pack->eth.ether_shost[0],
+						curr_pack->eth.ether_shost[1],
+						curr_pack->eth.ether_shost[2],
+						curr_pack->eth.ether_shost[3],
+						curr_pack->eth.ether_shost[4],
+						curr_pack->eth.ether_shost[5]
+				);
+				printf("ipv: %i\nlen: %i\n\n",curr_pack->ip.ip_v,curr_pack->ip.ip_hl);
+				printf("ip_tos: %i\nlen: %i\n\n",curr_pack->ip.ip_tos,curr_pack->ip.ip_len);
+				printf("ip_id: %i\nip_off: %i\n\n",curr_pack->ip.ip_id,curr_pack->ip.ip_off);
+				printf("ip_ttl: %i\nip_p: %i\n\n",curr_pack->ip.ip_ttl,curr_pack->ip.ip_p);
+				printf("protocol: %x\ndPort: %x\n\n",curr_pack->ip.ip_p,curr_pack->udp.uh_dport);
+				if (curr_pack->eth.ether_shost[0] == 0xa4
+					&& curr_pack->eth.ether_shost[1] == 0x1f
+					&& curr_pack->eth.ether_shost[2] == 0x72
+					&& curr_pack->eth.ether_shost[3] == 0xf5
+					&& curr_pack->eth.ether_shost[4] == 0x90
+					&& curr_pack->eth.ether_shost[5] == 0xc4
+					&&
+					curr_pack->ip.ip_p == 17 && curr_pack->udp.uh_dport == 67) //UDP
 				{
+					printf("recebeu discover\n");
 					int * options = (int *)&(curr_pack->dhcp.options[0]);
 
 					if(*options == DHCPDISCOVER) //DHCP Discover
