@@ -23,10 +23,6 @@
 #include "dhcp.h"
 #include "in_cksum.cpp"
 
-#ifndef SOCKETSTRUCT_H
-#define SOCKETSTRUCT_H
-
-
 #define BROADCAST_ADDR 			0xFFFFFFFF // 255.255.255.255
 #define NET_MASK				0x11111100 // 255.255.255.0
 #define LEASE_TIME_DEFAULT		0X00000078 // 120 segundos
@@ -114,22 +110,22 @@ void load_ips()
 {
 	struct ifaddrs *ifap, *ifa;
     struct sockaddr_in *sa;
-
+	int um = 1;
     getifaddrs (&ifap);
     for (ifa = ifap; ifa; ifa = ifa->ifa_next) 
 	{
         if (ifa->ifa_addr->sa_family==AF_INET) 
 		{
             sa = (struct sockaddr_in *) ifa->ifa_addr;
+			printf("ip: %s \n",inet_ntoa(sa->sin_addr));
 			my_ip = convertToInt32(sa->sin_addr);
             net_ip = my_ip & NET_MASK;
-			break;
+			if(um != 1)
+				break;
+			um++;
         }
     }
-	if (ifap!=NULL)
-		freeifaddrs(ifap);
-	if (ifa!=NULL)
-		freeifaddrs(ifa);
+
 }
 
 void monta_options(option_field *option_pointer, unsigned char type)
@@ -297,6 +293,8 @@ void enviaPacote()
 
 int main(int argc,char *argv[])
 {
+	printf("oi\n");
+	load_ips();
     /* Criacao do socket. Uso do protocolo Ethernet em todos os pacotes. De um "man" para ver os parametros.*/
     /* htons: converte um short (2-byte) integer para standard network byte order. */
 	if((sock = socket(PF_PACKET, SOCK_RAW, htons(ETH_P_ALL))) < 0)  {
@@ -304,10 +302,13 @@ int main(int argc,char *argv[])
         exit(1);
  	}
 
-	bool recebeuDhcp = false;
+	printf("oi\n");
+	bool recebeuDhcpDiscover = false;
 
+	printf("oi\n");
 	while(1)
 	{
+	printf("oi\n");
 		//Le mensagens
 		recv(sock,(char *) &buff, sizeof(buff), 0x0);
 		curr_pack = (package *) &buff[0];
@@ -340,6 +341,5 @@ int main(int argc,char *argv[])
 			enviaPacote();
 		}
 	}
+	return 0;
 }
-
-#endif
