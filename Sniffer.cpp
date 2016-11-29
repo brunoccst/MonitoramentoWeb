@@ -50,194 +50,164 @@ typedef struct ether_header _ethernet;
 typedef struct ip _ip;
 typedef struct udphdr _udp;
 typedef struct dhcp_packet _dhcp;
-typedef struct option_field {
-	uint16_t		dhcp_message_type_id;
-	unsigned char 	dhcp_message_type; // 53 0X35
-	
-	uint16_t		ip_address_lease_time_id;
-	uint32_t 		ip_address_lease_time;//51 0X
-	
-	uint16_t		subnet_mask_id;
-	uint32_t 	  	subnet_mask; //01 0X01
-	
-	uint16_t		broadcast_addr_id;
-	uint32_t		broadcast_addr;//28 
-	
-	uint16_t		router_id;
-	uint32_t 		router;//03 0X03
 
-	uint16_t		domain_name_id;
-	uint32_t 		domain_name[3]; //15 0X3A
-	
-	uint16_t		server_identifier_id;
-	uint32_t 		server_identifier;//54 0X36
-	
-	
-	uint16_t		domain_name_server_id;
-	uint32_t 		domain_name_server[2];//06 
-	
-	uint16_t		netBIOS_name_service_id;
-	uint32_t 		netBIOS_name_service[2]; //44 0X2C size n octects adress
+_ethernet* eth;
+_ip* ip;
+_udp* udp;
+_dhcp* dhcp;
 
-	unsigned char 	end;
-} options_field;
+unsigned char my_mac[16];
+uint32_t my_ip = 0;
+uint32_t net_ip = 0; // 10.32.143.0
+char ip_to_send[] = "10.32.143.42";
 
-typedef struct package_header{
-	_ethernet eth;
-	_ip ip;
-	_udp udp;
-	_dhcp dhcp;
-} package ;
-
-//unsigned char net_ip[4] = [10,32,143,0];
-uint32_t my_ip = 0; // to load in load_ips
-uint32_t net_ip = 0x0A208F00; // 10.32.143.0]
-uint32_t sub_net = 0;
-uint32_t domain_name_server_1 = 0X0A28300A;
-uint32_t domain_name_server_2 = 0X0A28300B;
-unsigned char next_free_ip = 0xC9; // 201;
-
-
-unsigned char buff[1500];
+unsigned char buff[1502];
 int sock;
+struct sockaddr_ll to;
+socklen_t len;
+unsigned char addr[6];
 
-package * curr_pack = (package *)&buff[0];
-
-void monta_options(option_field *option_pointer, unsigned char type)
+void inverteEthernet()
 {
+	// Copia DHOST
+	u_char aux[6];
+	memcpy(&aux, &eth->ether_dhost, sizeof(&aux));
 
-	option_pointer->dhcp_message_type_id = 		DHCP_MESSAGE_TYPE; // 53
-	option_pointer->dhcp_message_type = 		type; // 53
+	// Troca dhost por shost
+	for (int i = 0; i < 6; i++)
+	{
+		eth->ether_dhost[i] = eth->ether_shost[i];
+	}
 
-	option_pointer->ip_address_lease_time_id =	IP_ADDRES_LEASE_TIME;//51 -- 120 SEGUNDOS
-	option_pointer->ip_address_lease_time= 		LEASE_TIME_DEFAULT;//51 -- 120 SEGUNDOS
-
-	option_pointer->subnet_mask_id =			SUBNET_MASK; //01
-	option_pointer->subnet_mask = 				NET_MASK + sub_net; //01
-
-	option_pointer->broadcast_addr_id =			DHCP_OPT_BROADCAST; //58
-	option_pointer->broadcast_addr= 			net_ip + (sub_net & 255); //58
-
-	option_pointer->router_id =					ROUTER;//03
-	option_pointer->router= 					my_ip;//03
-
-	option_pointer->server_identifier_id =		SERVER_IDENTIFIER;//54
-	option_pointer->server_identifier= 			my_ip;//54
-
-	option_pointer->domain_name_id = 			DOMAIN_NAME;
-	option_pointer->domain_name[0]= 			0X696E662E;
-	option_pointer->domain_name[1]= 			0X70756372;
-	option_pointer->domain_name[2]= 			0X732E6272;
-
-	option_pointer->domain_name_server_id =		DOMAIN_NAME_SERVER_ID;//59
-	option_pointer->domain_name_server[0]= 		domain_name_server_1;//59
-	option_pointer->domain_name_server[1]= 		domain_name_server_2;//59
-
-	option_pointer->netBIOS_name_service_id =	NETBIOS_NAME_SERVICE;
-	option_pointer->netBIOS_name_service[0]=	domain_name_server_1;
-	option_pointer->netBIOS_name_service[1]=	domain_name_server_2;
-
-	option_pointer->end=						END;
-
-}
-/// recebe parametros em formato ordenado da rede ( funcções noths(), ntohl(),htons(),htonl())
-void monta_eth(uint32_t mac_dst, uint32_t mac_src, uint16_t type)
-{ 
-	unsigned char * mac = (unsigned char *)&mac_dst;
-
-	curr_pack->eth.ether_dhost[0] = mac[0];
-	curr_pack->eth.ether_dhost[1] = mac[1];
-	curr_pack->eth.ether_dhost[2] = mac[2];
-	curr_pack->eth.ether_dhost[3] = mac[3];
-	curr_pack->eth.ether_dhost[4] = mac[4];
-	curr_pack->eth.ether_dhost[5] = mac[5];
-
-	mac = (unsigned char *)&mac_src;
-
-	curr_pack->eth.ether_shost[0] = mac[0];
-	curr_pack->eth.ether_shost[1] = mac[1];
-	curr_pack->eth.ether_shost[2] = mac[2];
-	curr_pack->eth.ether_shost[3] = mac[3];
-	curr_pack->eth.ether_shost[4] = mac[4];
-	curr_pack->eth.ether_shost[5] = mac[5];
-	
- 	curr_pack->eth.ether_type = type;
+	// Troca shost por dhost
+	for (int i = 0; i < 6; i++)
+	{
+		eth->ether_shost[i] = aux[i];
+	}
 }
 
-
-void monta_udp(){ }
-
-void monta_dhcp(){ }
-
-void monta_ip(uint32_t ip_source, uint32_t ip_dest)
-{ 
-	curr_pack->ip.ip_src = convertInt32(ip_source);
-	curr_pack->ip.ip_dst = convertInt32(ip_dest);
-	curr_pack->ip.ip_sum = 0;
-	curr_pack->ip.ip_sum = in_cksum( (unsigned short * ) &curr_pack->ip , sizeof(_ip) );
-}
-
-void inverte_eth()
+void montaPacoteDHCPOffer()
 {
-	u_int8_t mac[6];
-	memcpy(&mac[0],&curr_pack->eth.ether_dhost[0],6);
-	memcpy(&curr_pack->eth.ether_dhost[0],&curr_pack->eth.ether_shost[0],6);
-	memcpy(&curr_pack->eth.ether_shost[0],&mac[0],6);
-	//free(mac);
+	// Monta ETHERNET
+	inverteEthernet();
+
+	// Monta IP
+	ip->ip_v = 0x4;
+	ip->ip_hl = 0x5;
+	ip->ip_tos = 0x0;
+	ip->ip_len = htons(0x150);
+	ip->ip_id = htons(0);
+	ip->ip_off = htons(0);
+	ip->ip_ttl = 0x80;
+	ip->ip_p = 0x11;
+	ip->ip_sum = htons(0);
+	inet_aton((char *)my_ip, &ip->ip_src);
+	inet_aton(ip_to_send, &ip->ip_dst);
+
+	char ipChecksum[20];
+	memcpy(ipChecksum, buff + 14, 20);
+	ip->ip_sum = (in_cksum((unsigned short *) ipChecksum, sizeof(struct ip)));
+
+	// Monta UDP
+	udp->source = htons(67);
+	udp->dest = htons(68);
+	udp->len = htons(316);
+	udp->check = htons(0);
+
+	// Monta DHCP
+	dhcp->op = 0x2;
+	dhcp->htype = 0x1;
+	dhcp->hlen = 0x6;
+	dhcp->hops = 0x0;
+	dhcp->xid = 0x9999;
+	dhcp->secs = 0x0;
+	dhcp->flags = 0x0000;
+
+	inet_aton("0.0.0.0", &dhcp->ciaddr);
+	inet_aton(ip_to_send, &dhcp->yiaddr);
+	inet_aton((char*)my_ip, &dhcp->siaddr);
+	inet_aton("0.0.0.0", &dhcp->ciaddr);
+
+	memcpy(&dhcp->chaddr, &my_mac, sizeof(&dhcp->chaddr));
+	dhcp->options[0] = 0x63;	
+	dhcp->options[1] = 0x82;
+	dhcp->options[2] = 0x53;
+	dhcp->options[3] = 0x63;
+
+	dhcp->options[4] = 0x35;
+	dhcp->options[5] = 0x01;
+	dhcp->options[6] = 0x02;
+	dhcp->options[7] = 0x36;
+
+	dhcp->options[8] = 0x04;
+	memcpy(&dhcp->options[9], &my_ip, sizeof(&my_ip));
+	dhcp->options[13] = 0x33;
+	dhcp->options[14] = 0x04;
+
+	dhcp->options[15] = 0x99;
+	dhcp->options[16] = 0x99;
+	dhcp->options[17] = 0x99;
+	dhcp->options[18] = 0x99;
+
+	dhcp->options[19] = 0x01;
+	dhcp->options[20] = 0x04;
+	dhcp->options[21] = 0xFF;
+	dhcp->options[22] = 0xFF;
+
+	dhcp->options[23] = 0xFF;
+	dhcp->options[24] = 0x00;
+	dhcp->options[25] = 0x1C;
+	dhcp->options[26] = 0x04;
+
+	dhcp->options[27] = 10;
+	dhcp->options[28] = 32;
+	dhcp->options[29] = 143;
+	dhcp->options[30] = 255;
+
+	dhcp->options[31] = 0x03;
+	dhcp->options[32] = 0x04;
+	memcpy(&dhcp->options[33], &my_ip, sizeof(&my_ip));
+
+	dhcp->options[37] = 0x0F;
+	dhcp->options[38] = 0x0C;
+	dhcp->options[39] = 0x39;
+	dhcp->options[40] = 0x6E;
+	dhcp->options[41] = 0x66;
+	dhcp->options[42] = 0x2E;
+	dhcp->options[43] = 0x70;
+	dhcp->options[44] = 0x75;
+	dhcp->options[45] = 0x63;
+	dhcp->options[46] = 0x72;
+	dhcp->options[47] = 0x73;
+	dhcp->options[48] = 0x2E;
+	dhcp->options[49] = 0x62;
+	dhcp->options[50] = 0x72;
+
+	dhcp->options[51] = 0x06;
+	dhcp->options[52] = 0x08;
+	dhcp->options[53] = 0x0A;
+	dhcp->options[54] = 0x28;
+	dhcp->options[55] = 0x30;
+	dhcp->options[56] = 0x0A;
+	dhcp->options[57] = 0x0A;
+	dhcp->options[58] = 0x28;
+	dhcp->options[59] = 0x30;
+	dhcp->options[60] = 0x0B;
+
+	dhcp->options[61] = 0x2C;
+	dhcp->options[62] = 0x08;
+	dhcp->options[63] = 0x0A;
+	dhcp->options[64] = 0x28;
+	dhcp->options[65] = 0x30;
+	dhcp->options[66] = 0x0A;
+	dhcp->options[67] = 0x0A;
+	dhcp->options[68] = 0x28;
+	dhcp->options[69] = 0x30;
+	dhcp->options[70] = 0x0B;
+	dhcp->options[71] = 0xFF;
 }
-void inverte_udp()
-{
-	uint16_t port_aux = curr_pack->udp.uh_sport; 
-	curr_pack->udp.uh_sport = curr_pack->udp.uh_dport;
-	curr_pack->udp.uh_dport = port_aux;
-}
 
-void monta_DHCP(unsigned char type)
-{
-	inverte_eth();
-	monta_ip(my_ip, BROADCAST_ADDR);
-	inverte_udp();
-
-	curr_pack->dhcp.op = 2; //Op Code
-	curr_pack->dhcp.yiaddr = convertInt32(net_ip + (next_free_ip++)); //Your IP Address
-	
-	memcpy(&curr_pack->dhcp.options[0],0,DHCP_MAX_OPTION_LEN);
-
-	monta_options(( options_field * ) &curr_pack->dhcp.options[0],type);
-}
-
-
-void monta_pacote()
-{
-	// as struct estao descritas nos seus arquivos .h
-	// por exemplo a ether_header esta no net/ethert.h
-	// a struct ip esta descrita no netinet/ip.h
-	struct ether_header *eth;
-
-	// coloca o ponteiro do header ethernet apontando para a 1a. posicao do buffer
-	// onde inicia o header do ethernet.
-	eth = (struct ether_header *) &buff[0];
-
-	//Endereco Mac Destino
-	eth->ether_dhost[0] = 0X00;
-	eth->ether_dhost[1] = 0X06;
-	eth->ether_dhost[2] = 0X5B;
-	eth->ether_dhost[3] = 0X28;
-	eth->ether_dhost[4] = 0XAE;
-	eth->ether_dhost[5] = 0X73;
-
-	//Endereco Mac Origem
-	eth->ether_shost[0] = 0X00;
-	eth->ether_shost[1] = 0X08;
-	eth->ether_shost[2] = 0X74;
-	eth->ether_shost[3] = 0XB5;
-	eth->ether_shost[4] = 0XB5;
-	eth->ether_shost[5] = 0X8E;
-
- 	eth->ether_type = htons(0X800);
-}
-
-void enviaPacote()
+int main(int argc,char *argv[])
 {
 	struct sockaddr_ll to;
 	socklen_t len;
@@ -251,22 +221,9 @@ void enviaPacote()
 	to.sll_protocol= htons(ETH_P_ALL);
 	to.sll_ifindex = 2; /* indice da interface pela qual os pacotes serao enviados */
 
-	memcpy (to.sll_addr, curr_pack->eth.ether_dhost, 6);
-	len = sizeof(struct sockaddr_ll);
-
-	monta_pacote();
-
-	if(sendto(sock, (char *) buff, sizeof(buff), 0, (struct sockaddr*) &to, len)<0)
-			printf("sendto maquina destino.\n");
-}
-
-int main(int argc,char *argv[])
-{
 	printf("Iniciando o sniffer\n\n");
 	GetIPDaRede(my_ip, net_ip);
 	EscreveInformacoesIP(&my_ip, &net_ip);
-
-	unsigned char x[200];
 
     /* Criacao do socket. Uso do protocolo Ethernet em todos os pacotes. De um "man" para ver os parametros.*/
     /* htons: converte um short (2-byte) integer para standard network byte order. */
@@ -275,86 +232,61 @@ int main(int argc,char *argv[])
         exit(1);
  	}
 
-	bool recebeuDhcpDiscover = false;
-	int posicaoNoBuffer = 0;
+	bool recebendoPacotes = false;
 
 	while(1)
 	{
+		if (!recebendoPacotes)
+		{
+			printf("\nRecebendo pacotes.\n");
+			recebendoPacotes = true;
+		}
+
 		int err_no = 0;
 		err_no = recv(sock,(char *) &buff, sizeof(buff), 0x0);
 
 		//Le mensagens
 		if(!err_no || err_no == -1){
+			printf("Falha no recebimento de pacotes.\n");
 			continue;
 		}
 			 
-		posicaoNoBuffer = 0;
-		memcpy(&curr_pack->eth, &buff, sizeof(curr_pack->eth));
-		posicaoNoBuffer = sizeof(curr_pack->eth);
+		// Pega o pacote ETHERNET
+		eth = (struct ether_header *) &buff[0];
 
 		//Verifica o tipo de protocolo no ethernet
-		if(ntohs(curr_pack->eth.ether_type) == ETHERTYPE_IP
-			&& 	curr_pack->eth.ether_shost[0] == 0xa4
-			&&	curr_pack->eth.ether_shost[1] == 0x1f
-			&&	curr_pack->eth.ether_shost[2] == 0x72
-			&&	curr_pack->eth.ether_shost[3] == 0xf5
-			&&	curr_pack->eth.ether_shost[4] == 0x90
-			&&	curr_pack->eth.ether_shost[5] == 0x8f
+		if(ntohs(eth->ether_type) == ETHERTYPE_IP
+			&& 	eth->ether_shost[0] == 0xa4 //TODO: Deletar
+			&&	eth->ether_shost[1] == 0x1f //TODO: Deletar
+			&&	eth->ether_shost[2] == 0x72 //TODO: Deletar
+			&&	eth->ether_shost[3] == 0xf5 //TODO: Deletar
+			&&	eth->ether_shost[4] == 0x90 //TODO: Deletar
+			&&	eth->ether_shost[5] == 0x8f //TODO: Deletar
 		)
 		{
-				//carrega ip header
-				printf("a) ");
-				for (int i = 0; i < 14; i++)
+				// Pega o pacote IP e UDP
+				ip = (struct ip *) &buff[14];
+				udp = (struct udphdr *) &buff[34];
+
+				if (ip->ip_p == 17 && udp->source == htons(68)) //UDP
 				{
-					printf("%x ",(int)buff[posicaoNoBuffer + i]);
-				}
+					dhcp = (struct dhcp_packet *) &buff[42];
 
-				memcpy(&curr_pack->ip, &buff[posicaoNoBuffer], sizeof(curr_pack->ip));
-
-				printf("\nb) ");
-				//carrega ip header
-				for (int i = 0; i < 14; i++)
-				{
-					printf("%x ",(int)buff[posicaoNoBuffer + i]);
-				}
-				posicaoNoBuffer += sizeof(_ip);
-				//printf("%i\n",posicaoNoBuffer);
-
-    			memcpy(&curr_pack->udp, &buff[posicaoNoBuffer], sizeof(_udp));
-				posicaoNoBuffer += sizeof(_udp);
-				//printf("%i\n",posicaoNoBuffer);
-
-				printf("ipv: %x\nlen: %x\n\n",curr_pack->ip.ip_v,curr_pack->ip.ip_hl);
-				printf("ip_tos: %x\nlen: %x\n\n",curr_pack->ip.ip_tos,curr_pack->ip.ip_len);
-				printf("ip_id: %x\nip_off: %x\n\n",curr_pack->ip.ip_id,curr_pack->ip.ip_off);
-				printf("ip_ttl: %x\nip_p: %x\n\n",curr_pack->ip.ip_ttl,curr_pack->ip.ip_p);
-				printf("protocol: %x\ndPort: %x\n\n",curr_pack->ip.ip_p,curr_pack->udp.uh_dport);
-				if (curr_pack->ip.ip_p == 17 && curr_pack->udp.uh_dport == 67) //UDP
-				{
-					//carrega ip header
-					
-					memcpy(&curr_pack->dhcp, &buff[posicaoNoBuffer], sizeof(_dhcp));
-					posicaoNoBuffer += sizeof(_dhcp);
-					printf("recebeu discover\n");
-					int * options = (int *)&(curr_pack->dhcp.options[0]);
-
-					if(*options == DHCPDISCOVER) //DHCP Discover
+					if(dhcp->options[6] == DHCPDISCOVER) //DHCP Discover
 					{
-						monta_DHCP(DHCPOFFER);
-						recebeuDhcpDiscover = true;
-					}
-					else if(*options == DHCPREQUEST)
-					{
-						monta_DHCP(DHCPACK);
-						recebeuDhcpDiscover = true;
+						printf("DHCP Discover recebido\n");
+						printf("%s", to.sll_addr);
+						memcpy(&to.sll_addr, &eth->ether_dhost, 6);
+						printf("OI");
+						len = sizeof(struct sockaddr_ll);
+
+						montaPacoteDHCPOffer();
+						if(sendto(sock, (char *) buff, sizeof(buff), 0, (struct sockaddr*) &to, len)<0)
+								printf("sendto maquina destino.\n");
+
+						recebendoPacotes = false;
 					}
 				}
-		}
-		
-		//Se DHCP Discovery identificada...
-		if (recebeuDhcpDiscover)
-		{
-			enviaPacote();
 		}
 	}
 	return 0;
