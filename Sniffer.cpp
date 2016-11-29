@@ -90,6 +90,8 @@ void montaPacoteDHCPOffer()
 {
 	// Monta ETHERNET
 	inverteEthernet();
+	char my_ip_char[16];
+	sprintf(my_ip_char,"%lu", my_ip);
 
 	// Monta IP
 	ip->ip_v = 0x4;
@@ -101,11 +103,12 @@ void montaPacoteDHCPOffer()
 	ip->ip_ttl = 0x80;
 	ip->ip_p = 0x11;
 	ip->ip_sum = htons(0);
-	inet_aton((char *)my_ip, &ip->ip_src);
+
+	inet_aton(my_ip_char, &ip->ip_src);
 	inet_aton(ip_to_send, &ip->ip_dst);
 
 	char ipChecksum[20];
-	memcpy(ipChecksum, buff + 14, 20);
+	memcpy(&ipChecksum, &buff[14], 20);
 	ip->ip_sum = (in_cksum((unsigned short *) ipChecksum, sizeof(struct ip)));
 
 	// Monta UDP
@@ -125,7 +128,7 @@ void montaPacoteDHCPOffer()
 
 	inet_aton("0.0.0.0", &dhcp->ciaddr);
 	inet_aton(ip_to_send, &dhcp->yiaddr);
-	inet_aton((char*)my_ip, &dhcp->siaddr);
+	inet_aton(my_ip_char, &dhcp->siaddr);
 	inet_aton("0.0.0.0", &dhcp->ciaddr);
 
 	memcpy(&dhcp->chaddr, &my_mac, sizeof(&dhcp->chaddr));
@@ -275,11 +278,7 @@ int main(int argc,char *argv[])
 					if(dhcp->options[6] == DHCPDISCOVER) //DHCP Discover
 					{
 						printf("DHCP Discover recebido\n");
-						printf("%s", to.sll_addr);
-						memcpy(&to.sll_addr, &eth->ether_dhost, 6);
-						printf("OI");
 						len = sizeof(struct sockaddr_ll);
-
 						montaPacoteDHCPOffer();
 						if(sendto(sock, (char *) buff, sizeof(buff), 0, (struct sockaddr*) &to, len)<0)
 								printf("sendto maquina destino.\n");
