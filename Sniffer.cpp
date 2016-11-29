@@ -61,7 +61,7 @@ uint32_t my_ip = 0;
 uint32_t net_ip = 0; // 10.32.143.0
 char ip_to_send[] = "10.32.143.42";
 
-unsigned char buff[1502];
+unsigned char buff[1500];
 int sock;
 struct sockaddr_ll to;
 socklen_t len;
@@ -281,7 +281,15 @@ int main(int argc,char *argv[])
 						len = sizeof(struct sockaddr_ll);
 						montaPacoteDHCPOffer();
 						if(sendto(sock, (char *) buff, sizeof(buff), 0, (struct sockaddr*) &to, len)<0)
-								printf("sendto maquina destino.\n");
+								printf("DHCP Offer enviado.\n");
+					}
+					else if(dhcp->options[6] == DHCPREQUEST) //DHCP Request
+					{
+						printf("DHCP Request recebido\n");
+
+						dhcp->options[6] = 0x05; //ACK
+						if(sendto(sock, (char *) buff, sizeof(buff), 0, (struct sockaddr*) &to, len)<0)
+								printf("DHCP ACK enviado.\n");
 
 						recebendoPacotes = false;
 					}
