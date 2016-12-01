@@ -56,7 +56,7 @@ _ip* ip;
 _udp* udp;
 _dhcp* dhcp;
 
-unsigned char my_mac[16];
+unsigned char my_mac[6];
 uint32_t my_ip = 0;
 uint32_t net_ip = 0; // 10.32.143.0
 char ip_to_send[] = "10.32.143.42";
@@ -65,13 +65,9 @@ unsigned char buff[1500];
 int sock;
 struct sockaddr_ll to;
 socklen_t len;
-unsigned char addr[6];
 
 void inverteEthernet()
 {
-	// Copia DHOST
-	u_char aux[6];
-	memcpy(&aux, &eth->ether_dhost, sizeof(&aux));
 
 	// Troca dhost por shost
 	for (int i = 0; i < 6; i++)
@@ -79,11 +75,7 @@ void inverteEthernet()
 		eth->ether_dhost[i] = eth->ether_shost[i];
 	}
 
-	// Troca shost por dhost
-	for (int i = 0; i < 6; i++)
-	{
-		eth->ether_shost[i] = aux[i];
-	}
+	memcpy(&eth->ether_shost, &my_mac, sizeof(&eth->ether_shost));
 }
 
 void montaPacoteDHCPOffer()
@@ -232,7 +224,7 @@ int main(int argc,char *argv[])
     /* htons: converte um short (2-byte) integer para standard network byte order. */
 	if((sock = socket(PF_PACKET, SOCK_RAW, htons(ETH_P_ALL))) < 0)  {
 		printf("Erro na criacao do socket.\n");
-        exit(1);
+        	exit(1);
  	}
 
 	bool recebendoPacotes = false;
@@ -258,14 +250,7 @@ int main(int argc,char *argv[])
 		eth = (struct ether_header *) &buff[0];
 
 		//Verifica o tipo de protocolo no ethernet
-		if(ntohs(eth->ether_type) == ETHERTYPE_IP
-			&& 	eth->ether_shost[0] == 0xa4 //TODO: Deletar
-			&&	eth->ether_shost[1] == 0x1f //TODO: Deletar
-			&&	eth->ether_shost[2] == 0x72 //TODO: Deletar
-			&&	eth->ether_shost[3] == 0xf5 //TODO: Deletar
-			&&	eth->ether_shost[4] == 0x90 //TODO: Deletar
-			&&	eth->ether_shost[5] == 0x8f //TODO: Deletar
-		)
+		if(ntohs(eth->ether_type) == ETHERTYPE_IP)
 		{
 				// Pega o pacote IP e UDP
 				ip = (struct ip *) &buff[14];
@@ -281,12 +266,13 @@ int main(int argc,char *argv[])
 						len = sizeof(struct sockaddr_ll);
 						montaPacoteDHCPOffer();
 						if(sendto(sock, (char *) buff, sizeof(buff), 0, (struct sockaddr*) &to, len)<0)
-								printf("DHCP Offer enviado.\n");
+							printf("DHCP Offer enviado.\n");
 					}
 					else if(dhcp->options[6] == DHCPREQUEST) //DHCP Request
 					{
 						printf("DHCP Request recebido\n");
-
+						len = sizeof(struct sockaddr_ll);
+						montaPacoteDHCPOffer();
 						dhcp->options[6] = 0x05; //ACK
 						if(sendto(sock, (char *) buff, sizeof(buff), 0, (struct sockaddr*) &to, len)<0)
 								printf("DHCP ACK enviado.\n");
