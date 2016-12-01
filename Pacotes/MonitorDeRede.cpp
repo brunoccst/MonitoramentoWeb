@@ -5,18 +5,24 @@
 void GetIPDaRede(uint32_t &ipDaMaquina, uint32_t &ipDaRede)
 {
 	struct ifaddrs *ifap, *ifa;
-    struct sockaddr_in *sa;
+	struct sockaddr_in *sa;
 
-    getifaddrs (&ifap);
-    for (ifa = ifap; ifa; ifa = ifa->ifa_next) 
+	getifaddrs (&ifap);
+	int i = 0;
+	for (ifa = ifap; ifa; ifa = ifa->ifa_next) 
 	{
-        if (ifa->ifa_addr->sa_family==AF_INET) 
+		if (ifa->ifa_addr->sa_family==AF_INET) 
 		{
-            sa = (struct sockaddr_in *) ifa->ifa_addr;
+			sa = (struct sockaddr_in *) ifa->ifa_addr;
+			
+			// IP da maquina
 			ipDaMaquina = convertToInt32(sa->sin_addr);
-            ipDaRede = ipDaMaquina & convertToInt32(((struct sockaddr_in *)ifa->ifa_netmask)->sin_addr);
-        }
-    }
+
+			// IP da rede
+			ipDaRede = ipDaMaquina & convertToInt32(((struct sockaddr_in *)ifa->ifa_netmask)->sin_addr);
+		}
+		i++;
+	}
 }
 
 //	Escreve no console o IP da maquina e da rede
