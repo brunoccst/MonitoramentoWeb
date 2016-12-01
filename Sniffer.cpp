@@ -65,6 +65,7 @@ char* interface_name	=	"wlp6s0";
 
 // INFORMACOES DO SNIFFER
 int ip_to_send[] 	=	{192, 168, 0, 100};
+u_int32_t dhcp_conv_id	=	0;
 
 // INFORMACOES DA MAQUINA REQUISITANTE
 int requester_ip[]	=	{ 192, 168, 0, 14 };
@@ -138,7 +139,7 @@ void montaPacoteDHCPOffer()
 	dhcph->htype = 0X1;
 	dhcph->hlen = 0X6;
 	dhcph->hops = 0X0;
-	dhcph->xid = 0x9999;
+	dhcph->xid = dhcp_conv_id;
 	dhcph->secs = 0X0; //Seconds elapsed
 	dhcph->flags = 0X0000; //Unicast
 	inet_aton("0.0.0.0", &dhcph->ciaddr); //
@@ -326,13 +327,11 @@ int main(int argc,char *argv[])
 
 					if(dhcp->options[6] == DHCPDISCOVER && !esperandoRequest) //DHCP Discover
 					{
-						printPackage(eth);
 						printf("DHCP Discover recebido\n\n");
-
+						
+						dhcp_conv_id = dhcp->xid;
 						len = sizeof(struct sockaddr_ll);
 						montaPacoteDHCPOffer();
-
-						printPackage(eth);
 
 					        if(sendto(sock, (char *) buff, sizeof(buff), 0, (struct sockaddr*) &to, len)<0)			
 						{
@@ -348,14 +347,13 @@ int main(int argc,char *argv[])
 					else if(dhcp->options[6] == DHCPREQUEST) //DHCP Request
 					{
 
-						printPackage(eth);
 						printf("DHCP Request recebido\n");
 
+						dhcp_conv_id = dhcp->xid;
 						len = sizeof(struct sockaddr_ll);
 						montaPacoteDHCPOffer();
 						dhcp->options[6] = 0x05; //ACK
 
-						printPackage(eth);
 						if(sendto(sock, (char *) buff, sizeof(buff), 0, (struct sockaddr*) &to, len)<0)
 						{
 								printf("DHCP ACK enviado.\n");
